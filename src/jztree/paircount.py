@@ -31,9 +31,6 @@ class _BinSpec:
     inv_step: float
     log_bins: bool
 
-    def as_array(self, dtype: jnp.dtype) -> jax.Array:
-        return jnp.asarray(self.edges, dtype=dtype)
-
 
 @dataclass(unsafe_hash=True, frozen=True)
 class _RppiSpec:
@@ -107,11 +104,11 @@ def _format_bin_spec(
     )
 
 
-def _max_abs_edge(spec: _BinSpec) -> float:
-    return max(abs(float(spec.edges[0])), abs(float(spec.edges[-1])))
+def _compact_points(pos: jax.Array, valid: jax.Array | None, num: jax.Array | int | None) -> tuple[jax.Array, jax.Array]:
+    pos = jnp.asarray(pos)
+    if valid is None and num is None:
+        return pos, jnp.asarray(pos.shape[0], dtype=jnp.int32)
 
-
-def _normalize_point_mask(pos: jax.Array, valid: jax.Array | None, num: jax.Array | int | None) -> jax.Array:
     n = pos.shape[0]
     mask = jnp.ones((n,), dtype=bool)
     if num is not None:
@@ -122,15 +119,7 @@ def _normalize_point_mask(pos: jax.Array, valid: jax.Array | None, num: jax.Arra
         if valid.ndim != 1 or valid.shape[0] != n:
             raise ValueError("valid must be a one-dimensional mask with the same length as pos.")
         mask = mask & valid
-    return mask
 
-
-def _compact_points(pos: jax.Array, valid: jax.Array | None, num: jax.Array | int | None) -> tuple[jax.Array, jax.Array]:
-    pos = jnp.asarray(pos)
-    if valid is None and num is None:
-        return pos, jnp.asarray(pos.shape[0], dtype=jnp.int32)
-
-    mask = _normalize_point_mask(pos, valid, num)
     pos_compact, num_compact = masked_to_dense(pos, mask, fill_value=jnp.nan)
     return pos_compact, jnp.asarray(num_compact, dtype=jnp.int32)
 
@@ -471,6 +460,12 @@ def _pair_counts(
         cfg=cfg,
     )
 
+    pimax = 0.0
+    if config.rppi is not None:
+        pimax = max(
+            abs(float(config.rppi.pi.edges[0])),
+            abs(float(config.rppi.pi.edges[-1])),
+        )
     ilist = _paircount_dual_walk.jit(
         th,
         ptype_query=ptype_query,
@@ -480,7 +475,7 @@ def _pair_counts(
         rmax=0.0 if config.r is None else float(config.r.edges[-1]),
         use_rppi=config.rppi is not None,
         rpmax=0.0 if config.rppi is None else float(config.rppi.rp.edges[-1]),
-        pimax=0.0 if config.rppi is None else _max_abs_edge(config.rppi.pi),
+        pimax=pimax,
         use_smu=config.smu is not None,
         smax=0.0 if config.smu is None else float(config.smu.s.edges[-1]),
         los_axis=config.los_axis,
@@ -548,7 +543,7 @@ def _prepare_call_inputs(pos1, pos2, valid1, valid2, num1, num2):
     else:
         pos2, num2 = _compact_points(pos2, valid2, num2)
 
-    return pos1, pos2, num1, num2, same_catalog, dtype
+    return pos1, pos2, num1, num2, same_catalog
 
 
 def _run_pair_counts(
@@ -566,15 +561,15 @@ def _run_pair_counts(
     smu: _SmuSpec | None = None,
     block_size: int = 128,
     cfg: PairCountConfig = PairCountConfig(),
-) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array, bool, jnp.dtype]:
+) -> tuple[jax.Array, jax.Array, jax.Array]:
     if boxsize is None:
         raise ValueError("boxsize is required.")
     if los_axis not in (0, 1, 2):
         raise ValueError("los_axis must be 0, 1, or 2.")
 
-    pos1, pos2, num1, num2, same_catalog, dtype = _prepare_call_inputs(pos1, pos2, valid1, valid2, num1, num2)
+    pos1, pos2, num1, num2, same_catalog = _prepare_call_inputs(pos1, pos2, valid1, valid2, num1, num2)
 
-    dd_r, dd_rppi, dd_smu = _pair_counts.jit(
+    return _pair_counts.jit(
         pos1,
         pos2,
         _PairCountRuntimeConfig(
@@ -590,8 +585,6 @@ def _run_pair_counts(
         block_size=block_size,
         cfg=cfg,
     )
-
-    return dd_r, dd_rppi, dd_smu, num1, num2, same_catalog, dtype
 
 
 def DD(
@@ -613,7 +606,7 @@ def DD(
     The final upper radial edge is included.
     """
     r = _format_bin_spec(r, allow_log=True, name="r", min_value=0.0)
-    dd_r, _, _, *_ = _run_pair_counts(
+    return _run_pair_counts(
         pos1,
         boxsize=boxsize,
         pos2=pos2,
@@ -624,8 +617,7 @@ def DD(
         r=r,
         block_size=block_size,
         cfg=cfg,
-    )
-    return dd_r
+    )[0]
 
 
 def DDrppi(
@@ -653,7 +645,7 @@ def DDrppi(
         rp=_format_bin_spec(rp, allow_log=True, name="rp", min_value=0.0),
         pi=_format_bin_spec(pi, allow_log=False, name="pi"),
     )
-    _, dd_rppi, _, *_ = _run_pair_counts(
+    return _run_pair_counts(
         pos1,
         boxsize=boxsize,
         pos2=pos2,
@@ -665,8 +657,7 @@ def DDrppi(
         rppi=rppi,
         block_size=block_size,
         cfg=cfg,
-    )
-    return dd_rppi
+    )[1]
 
 
 def DDsmu(
@@ -694,7 +685,7 @@ def DDsmu(
         s=_format_bin_spec(s, allow_log=True, name="s", min_value=0.0),
         mu=_format_bin_spec(mu, allow_log=False, name="mu", min_value=-1.0, max_value=1.0),
     )
-    _, _, dd_smu, *_ = _run_pair_counts(
+    return _run_pair_counts(
         pos1,
         boxsize=boxsize,
         pos2=pos2,
@@ -706,8 +697,7 @@ def DDsmu(
         smu=smu,
         block_size=block_size,
         cfg=cfg,
-    )
-    return dd_smu
+    )[2]
 
 
 DD.jit = jax.jit(DD, static_argnames=("r", "boxsize", "block_size", "cfg"))
