@@ -20,6 +20,9 @@ knn_dim = (2,3)
 fof_types = ("float", "double")
 fof_dim = (2,3)
 
+paircount_types = ("float", "double")
+paircount_dim = (2,3)
+
 default_includes = ["../common/math.cuh"]
 
 def add_dim_dtype_templates(func, buf_from, dimensions=dimensions, pos_types=float_types):
@@ -91,6 +94,39 @@ gen.generate_ffi_module_file(
     output_file = str(HERE / "generated/ffi_fof.cu"),
     functions = functions,
     includes = default_includes + ["../fof.cuh"]
+)
+
+# ------------------------------------------------------------------------------------------------ #
+#                                           paircount.cuh                                         #
+# ------------------------------------------------------------------------------------------------ #
+
+functions = parse.get_functions_from_file(
+    str(HERE / "paircount.cuh"),
+    names=["PairCountNode2Node", "PairCountLeaf2LeafR", "PairCountLeaf2LeafAniso"],
+    only_kernels=False
+)
+
+add_dim_dtype_templates(functions["PairCountNode2Node"], "nodes", paircount_dim, paircount_types)
+functions["PairCountNode2Node"].template_par["dim"].expression = None
+functions["PairCountNode2Node"].par["size_parent"].expression = "parent_spl.element_count() - 1"
+functions["PairCountNode2Node"].par["size_node"].expression = "node_qcount.element_count()"
+functions["PairCountNode2Node"].par["size_node_ilist"].expression = "node_ilist_ioth->element_count()"
+
+add_dim_dtype_templates(functions["PairCountLeaf2LeafR"], "xT", paircount_dim, paircount_types)
+functions["PairCountLeaf2LeafR"].par["size_leaves_query"].expression = "splQ.element_count() - 1"
+functions["PairCountLeaf2LeafR"].par["nbins"].expression = "hist->element_count()"
+
+add_dim_dtype_templates(functions["PairCountLeaf2LeafAniso"], "xT", paircount_dim, paircount_types)
+functions["PairCountLeaf2LeafAniso"].par["size_leaves_query"].expression = "splQ.element_count() - 1"
+functions["PairCountLeaf2LeafAniso"].par["nrp"].expression = "hist_rppi->dimensions()[0]"
+functions["PairCountLeaf2LeafAniso"].par["npi"].expression = "hist_rppi->dimensions()[1]"
+functions["PairCountLeaf2LeafAniso"].par["ns"].expression = "hist_smu->dimensions()[0]"
+functions["PairCountLeaf2LeafAniso"].par["nmu"].expression = "hist_smu->dimensions()[1]"
+
+gen.generate_ffi_module_file(
+    output_file = str(HERE / "generated/ffi_paircount.cu"),
+    functions = functions,
+    includes = default_includes + ["../paircount.cuh"]
 )
 
 # ------------------------------------------------------------------------------------------------ #

@@ -7,3 +7,4 @@ from . import comm
 from . import tree
 from . import knn
 from . import fof
+from . import paircount

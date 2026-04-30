@@ -57,3 +57,16 @@ class KNNConfig:
         mass_centered = False,
         regularization=RegularizationConfig()
     )
+
+@dataclass(unsafe_hash=True)
+class PairCountConfig:
+    alloc_fac_ilist: float = 2048.
+
+    tree: TreeConfig = TreeConfig(
+        max_leaf_size = 48,
+        coarse_fac = 8.,
+        alloc_fac_nodes = 1.,
+        stop_coarsen = 2048,
+        mass_centered = False,
+        regularization=RegularizationConfig()
+    )

@@ -9,6 +9,7 @@ __pycache__/
 *$py.class
 checks/old_benchmarks/logs
 checks/benchmarks/.results
+benchmarks/.results
 
 # C extensions
 *.so
