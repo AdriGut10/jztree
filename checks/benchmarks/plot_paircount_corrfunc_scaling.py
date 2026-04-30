@@ -171,6 +171,7 @@ def _diff_summary(jztree_counts, corrfunc_counts):
 def _write_csv(path, rows):
     fieldnames = [
         "npart",
+        "dtype",
         "mode",
         "jztree_mean_ms",
         "jztree_std_ms",
@@ -280,7 +281,8 @@ def _parse_args():
     parser.add_argument("--npi", type=int, default=40)
     parser.add_argument("--nmu", type=int, default=40)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--corrfunc-threads", type=int, default=8)
+    parser.add_argument("--dtype", choices=("float32", "float64"), default="float32")
+    parser.add_argument("--corrfunc-threads", type=int, default=16)
     parser.add_argument("--corrfunc-repeats", type=int, default=3)
     parser.add_argument("--corrfunc-warmup", type=int, default=1)
     parser.add_argument("--skip-corrfunc-gpu-ddsmu", action="store_true", help="Skip the additional Corrfunc GPU line for DDsmu.")
@@ -293,6 +295,9 @@ def _parse_args():
 
 def main():
     args = _parse_args()
+    if args.dtype == "float64":
+        jax.config.update("jax_enable_x64", True)
+
     sizes = sorted(set(args.sizes + ([1_000_000] if args.stress_1e6 else [])))
     bins = _bins(args)
 
@@ -308,16 +313,21 @@ def main():
     args.outdir.mkdir(parents=True, exist_ok=True)
     rows = []
 
+    dtype = jnp.float32 if args.dtype == "float32" else jnp.float64
+    np_dtype = np.float32 if args.dtype == "float32" else np.float64
+
     print(f"device: {jax.devices()[0]}")
+    print(f"dtype: {args.dtype}")
     for npart in sizes:
-        pos = jax.random.uniform(jax.random.key(args.seed), (npart, 3), dtype=jnp.float32)
-        pos_np = None if args.jztree_only else np.asarray(pos)
+        pos = jax.random.uniform(jax.random.key(args.seed), (npart, 3), dtype=dtype)
+        pos_np = None if args.jztree_only else np.asarray(pos, dtype=np_dtype)
 
         for mode in args.modes:
             estimated = _estimated_max_bin_count(mode, npart, bins, args.boxsize)
             if estimated > 0.8 * INT32_LIMIT and not args.allow_int32_risk:
                 row = {
                     "npart": npart,
+                    "dtype": args.dtype,
                     "mode": mode,
                     "skipped_reason": f"estimated max bin count {estimated:.3e} is close to int32 limit",
                 }
@@ -330,6 +340,7 @@ def main():
             )
             row = {
                 "npart": npart,
+                "dtype": args.dtype,
                 "mode": mode,
                 "jztree_mean_ms": float(np.mean(jztree_times)),
                 "jztree_std_ms": float(np.std(jztree_times)),

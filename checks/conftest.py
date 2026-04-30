@@ -16,6 +16,8 @@ def pytest_addoption(parser):
     parser.addoption( "--quick", action="store_true", default=False,
         help="Quick mode: deselect slow tests and reduce parametrized tests to first case.",
     )
+    parser.addoption("--single", action="store_true", default=False, help="Run only single-precision benchmark cases.")
+    parser.addoption("--double", action="store_true", default=False, help="Run only double-precision benchmark cases.")
 
 def pytest_runtest_setup(item):
     if item.config.getoption("--quick"):
@@ -23,6 +25,9 @@ def pytest_runtest_setup(item):
             pytest.skip("Skipped in --quick mode")
 
 def pytest_configure(config):
+    if config.getoption("--single") and config.getoption("--double"):
+        raise pytest.UsageError("--single and --double are mutually exclusive.")
+
     config.addinivalue_line("markers", "slow: skip the whole test in --quick mode")
     config.addinivalue_line("markers", "skip_in_quick: skip the whole test in --quick mode")
     config.addinivalue_line( "markers",

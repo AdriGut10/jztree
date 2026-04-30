@@ -147,7 +147,7 @@ def main():
     parser.add_argument("--npart", type=int, default=100_000)
     parser.add_argument("--boxsize", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--corrfunc-threads", type=int, default=8)
+    parser.add_argument("--corrfunc-threads", type=int, default=16)
     parser.add_argument("--skip-corrfunc-gpu-ddsmu", action="store_true", help="Skip the additional Corrfunc GPU DDsmu comparison.")
     parser.add_argument("--max-rel-diff", type=float, default=2.0e-5)
     parser.add_argument("--repeats", type=int, default=5)
